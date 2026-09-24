@@ -5,6 +5,14 @@ NGINX_CONF="./deploy/nginx/default.conf"
 
 echo "=== Blue/Green deployment ==="
 
+# The commit SHA must identify the version being deployed
+if [ -z "${COMMIT_SHA:-}" ]; then
+    echo "ERROR: COMMIT_SHA is not defined."
+    exit 1
+fi
+
+echo "Expected commit SHA : $COMMIT_SHA"
+
 # Determine the environment currently used by Nginx
 if grep -q "web-blue:5000" "$NGINX_CONF"; then
     ACTIVE="blue"
@@ -48,7 +56,12 @@ RESULT=$(docker exec starter-app2-nginx-1 \
 echo "$RESULT"
 
 if ! echo "$RESULT" | grep -q "\"deploy_color\":\"$TARGET\""; then
-    echo "ERROR: smoke test failed."
+    echo "ERROR: smoke test failed: wrong deployment color."
+    exit 1
+fi
+
+if ! echo "$RESULT" | grep -q "\"commit_sha\":\"$COMMIT_SHA\""; then
+    echo "ERROR: smoke test failed: wrong commit SHA."
     exit 1
 fi
 
@@ -108,4 +121,17 @@ if ! echo "$FINAL_RESULT" | grep -q "\"deploy_color\":\"$TARGET\""; then
     exit 1
 fi
 
+# Also verify the commit SHA through Nginx
+if ! echo "$FINAL_RESULT" | grep -q "\"commit_sha\":\"$COMMIT_SHA\""; then
+    echo "ERROR: final commit SHA verification failed. Rolling back."
+
+    sed -i "s/web-$TARGET:5000/web-$ACTIVE:5000/" "$NGINX_CONF"
+
+    docker exec starter-app2-nginx-1 nginx -t
+    docker exec starter-app2-nginx-1 nginx -s reload
+
+    exit 1
+fi
+
 echo "Deployment successful: $ACTIVE -> $TARGET"
+echo "Deployed commit SHA : $COMMIT_SHA"
