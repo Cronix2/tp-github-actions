@@ -68,3 +68,24 @@ jobs:
           tags: |
             ghcr.io/cronix2/tp-github-actions:latest
             ghcr.io/cronix2/tp-github-actions:${{ github.sha }}
+
+  deploy:
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate deployment script
+        run: |
+          test -f deploy/deploy.sh
+          sh -n deploy/deploy.sh
+
+      - name: Display deployment information
+        run: |
+          echo "Image ready for deployment:"
+          echo "ghcr.io/cronix2/tp-github-actions:${{ github.sha }}"
+          echo "Blue/Green deployment script validated."
