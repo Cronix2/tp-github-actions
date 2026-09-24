@@ -1,189 +1,259 @@
-# TP DevOps - Docker, Compose et Registry
+﻿# TP DevOps - CI/CD et dÃ©ploiement Blue/Green
 
 [![CI](https://github.com/Cronix2/tp-github-actions/actions/workflows/ci.yml/badge.svg)](https://github.com/Cronix2/tp-github-actions/actions/workflows/ci.yml)
 
-Application Flask conteneurisée réalisée dans le cadre du TP DevOps.
+Application Flask conteneurisÃ©e avec Docker et intÃ©grÃ©e dans une chaÃ®ne CI/CD GitHub Actions.
 
-Le projet reprend le même dépôt que le TP GitHub Actions et ajoute la conteneurisation Docker, l'optimisation de l'image, Docker Compose, Redis, des healthchecks et la publication de l'image sur GitHub Container Registry.
+Le projet met en Å“uvre :
+
+- une application Flask exÃ©cutÃ©e avec Gunicorn ;
+- Redis avec stockage persistant ;
+- Docker et Docker Compose ;
+- des healthchecks ;
+- un reverse proxy Nginx ;
+- un dÃ©ploiement Blue/Green ;
+- des smoke tests ;
+- un rollback automatique ;
+- la traÃ§abilitÃ© du commit Git dÃ©ployÃ© ;
+- une CI multi-version Python ;
+- la publication automatique des images dans GitHub Container Registry.
 
 ## Architecture
 
-L'application est composée de deux services :
+L'architecture est composÃ©e de quatre services :
 
-- `web` : application Flask exécutée avec Gunicorn
-- `redis` : stockage persistant du compteur de visites
+- `web-blue` : environnement Blue de l'application Flask ;
+- `web-green` : environnement Green de l'application Flask ;
+- `nginx` : reverse proxy exposÃ© sur le port 8080 ;
+- `redis` : stockage persistant utilisÃ© par l'application.
 
-Les deux services communiquent sur un réseau Docker dédié.
-
-Un volume Docker persistant est associé à Redis afin de conserver les données.
-
-## Endpoints
-
-### Healthcheck
+Nginx dirige le trafic vers l'un des deux environnements applicatifs.
 
 ```text
+                    +----------------+
+                    |     Client     |
+                    +-------+--------+
+                            |
+                            v
+                    +----------------+
+                    |     Nginx      |
+                    |    :8080       |
+                    +-------+--------+
+                            |
+                   Blue ou Green
+                      /          \
+                     v            v
+             +-----------+   +-----------+
+             | web-blue  |   | web-green |
+             |   :5000   |   |   :5000   |
+             +-----+-----+   +-----+-----+
+                   \             /
+                    \           /
+                     v         v
+                    +-----------+
+                    |   Redis   |
+                    |   :6379   |
+                    +-----------+Les services communiquent sur le rÃ©seau Docker app-network.
+
+Le volume redis-data assure la persistance des donnÃ©es Redis.
+
+Endpoints
+Healthcheck
 GET /health
-```
 
-Réponse :
+Lorsque Redis est disponible :
 
-```json
 {
   "status": "ok",
   "redis": "ok"
 }
-```
 
-Si Redis est indisponible, l'endpoint renvoie HTTP 503 avec :
+Lorsque Redis est indisponible, l'application retoune HTTP 503.
 
-{
-  "status": "error",
-  "redis": "unavailable"
-}
-
-
-### Statut
-
-```text
+Status
 GET /status
-```
-
-Réponse :
-
-```json
-{
-  "service": "projet-devops-groupe-demo",
-  "version": "1.0"
-}
-```
-
-### Compteur de visites
-
-```text
-GET /visits
-```
-
-Le compteur est incrémenté et stocké dans Redis.
 
 Exemple :
 
-```json
 {
-  "visits": 4
+  "commit_sha": "05408a23264e77dfbeb5d24099457279e05e1b6c",
+  "deploy_color": "blue",
+  "service": "projet-devops-groupe-demo",
+  "version": "1.0"
 }
-```
 
-Le compteur reste disponible après le redémarrage du service `web`.
+deploy_color permet d'identifier l'environnement Blue/Green actuellement servi.
 
-## Docker
+commit_sha permet de vÃ©rifier prÃ©cisÃ©ment la rÃ©vision Git exÃ©cutÃ©e par le conteneur.
 
-### Construction
+Compteur de visites
+GET /visits
 
-```bash
+Le compteur est stockÃ© dans Redis et persiste lors du redÃ©marrage des services applicatifs.
+
+Docker
+
+Construction de l'image :
+
 docker build -t tp-devops:multistage .
-```
 
-### Lancement
+Le Dockerfile utilise une construction multi-stage avec une image finale basÃ©e sur python:3.12-slim.
 
-```bash
-docker run --rm -p 5000:5000 tp-devops:multistage
-```
+L'application est exÃ©cutÃ©e avec Gunicorn et un utilisateur non-root appuser.
 
-L'application est accessible sur le port `5000`.
+Docker Compose
 
-## Optimisation de l'image
+DÃ©marrage de l'environnement complet :
 
-Une première image utilisant `python:3.12` avait une taille de contenu d'environ :
-
-```text
-418 MB
-```
-
-Après passage à un Dockerfile multi-stage avec `python:3.12-slim`, la taille est passée à environ :
-
-```text
-54.2 MB
-```
-
-Cela représente une réduction d'environ 87 %.
-
-L'application est également exécutée avec un utilisateur non-root `appuser` et Gunicorn est utilisé à la place du serveur de développement Flask.
-
-## Docker Compose
-
-Démarrage de l'application complète :
-
-```bash
 docker compose up -d --build
-```
 
-Vérification :
+VÃ©rification :
 
-```bash
 docker compose ps
-```
 
-Arrêt :
+AccÃ¨s Ã  l'application :
 
-```bash
+http://localhost:8080
+
+ArrÃªt :
+
 docker compose down
-```
 
-Le fichier Compose configure :
+Les services web-blue et web-green disposent chacun d'un healthcheck HTTP sur /health.
 
-- le service Flask `web`
-- le service `redis`
-- un réseau Docker dédié
-- un volume persistant Redis
-- un healthcheck Redis avec `redis-cli ping`
-- un healthcheck HTTP sur `/health`
-- une dépendance conditionnelle permettant à `web` d'attendre que Redis soit healthy
+Redis dispose Ã©galement d'un healthcheck utilisant :
 
-## Tests
+redis-cli ping
+DÃ©ploiement Blue/Green
 
-Installation des dépendances :
+Le script :
 
-```bash
+deploy/deploy.sh
+
+automatise la bascule entre les environnements Blue et Green.
+
+Il rÃ©alise les opÃ©rations suivantes :
+
+dÃ©termine l'environnement actuellement utilisÃ© par Nginx ;
+sÃ©lectionne l'environnement cible ;
+vÃ©rifie que le conteneur cible est healthy ;
+exÃ©cute un smoke test sur /status ;
+vÃ©rifie la couleur de dÃ©ploiement ;
+vÃ©rifie le SHA du commit attendu ;
+modifie la configuration Nginx ;
+valide la configuration avec nginx -t ;
+recharge Nginx sans interruption ;
+vÃ©rifie le rÃ©sultat via l'endpoint public ;
+effectue un rollback automatique en cas d'Ã©chec.
+
+ExÃ©cution :
+
+export COMMIT_SHA=$(git rev-parse HEAD)
+./deploy/deploy.sh
+
+Exemple de bascule :
+
+Active deployment : blue
+Target deployment : green
+Smoke test successful.
+Deployment successful: blue -> green
+Rollback
+
+Si la vÃ©rification aprÃ¨s bascule Ã©choue, le script restaure automatiquement l'environnement prÃ©cÃ©demment actif.
+
+Le rollback remet la configuration Nginx dans son Ã©tat prÃ©cÃ©dent puis recharge le reverse proxy.
+
+Un rollback Git peut Ã©galement Ãªtre rÃ©alisÃ© avec :
+
+git revert <commit>
+
+La CI reconstruit alors automatiquement l'image correspondant Ã  l'Ã©tat restaurÃ©.
+
+Tests
+
+Installation des dÃ©pendances :
+
 pip install -r requirements.txt
-```
 
-Exécution des tests :
+Lint :
 
-```bash
-pytest -v
-```
-
-Résultat obtenu :
-
-```text
-3 passed
-```
-
-Vérification Flake8 :
-
-```bash
 flake8 .
-```
 
-## Registry
+Tests :
 
-L'image est publiée sur GitHub Container Registry.
+pytest -v
 
-Tags disponibles :
+Ã‰tat actuel :
 
-```text
+4 passed
+CI/CD GitHub Actions
+
+Le workflow GitHub Actions est exÃ©cutÃ© sur les push et les pull_request.
+
+Les tests sont exÃ©cutÃ©s avec une matrice Python :
+
+Python 3.11
+Python 3.12
+Python 3.13
+
+Pour chaque version, la CI :
+
+installe les dÃ©pendances ;
+exÃ©cute Flake8 ;
+exÃ©cute les tests avec couverture.
+
+Le rapport de couverture HTML de Python 3.13 est publiÃ© comme artifact GitHub Actions.
+
+Sur la branche main, aprÃ¨s validation des tests :
+
+test
+  |
+  v
+build-and-push
+  |
+  v
+deploy
+GitHub Container Registry
+
+AprÃ¨s validation des tests sur main, l'image Docker est publiÃ©e dans GHCR avec deux tags :
+
 ghcr.io/cronix2/tp-github-actions:latest
-ghcr.io/cronix2/tp-github-actions:v1.0.0
-```
+ghcr.io/cronix2/tp-github-actions:<commit-sha>
 
-Récupération de l'image :
+Le tag basÃ© sur le SHA Git permet d'identifier prÃ©cisÃ©ment l'image correspondant Ã  un commit.
 
-```bash
-docker pull ghcr.io/cronix2/tp-github-actions:v1.0.0
-```
+SÃ©curitÃ© et fiabilitÃ©
 
-L'image versionnée a été supprimée localement puis téléchargée de nouveau depuis GHCR afin de valider sa disponibilité.
+Le projet applique plusieurs bonnes pratiques :
 
-## CI
+utilisateur non-root dans l'image Docker ;
+image finale minimale ;
+healthchecks applicatifs ;
+healthcheck Redis ;
+dÃ©pendances entre services basÃ©es sur leur Ã©tat de santÃ© ;
+validation Nginx avant rechargement ;
+smoke test avant bascule ;
+vÃ©rification de la couleur Blue/Green ;
+vÃ©rification du SHA Git ;
+rollback automatique ;
+utilisation de GITHUB_TOKEN pour l'authentification GHCR.
+Validation finale
 
-Le dépôt conserve la CI GitHub Actions mise en place lors du TP précédent afin d'exécuter automatiquement les contrôles du projet.
+Le dÃ©ploiement Blue/Green a Ã©tÃ© testÃ© localement.
+
+Une bascule Blue vers Green a Ã©tÃ© rÃ©alisÃ©e avec succÃ¨s avec :
+
+deploy.sh exit code = 0
+
+L'endpoint /status exposÃ© par Nginx a ensuite confirmÃ© :
+
+deploy_color = green
+commit_sha = commit attendu
+version = 1.0
+
+L'endpoint /health a Ã©galement confirmÃ© :
+
+status = ok
+redis = ok
+
+La chaÃ®ne CI/CD complÃ¨te a enfin Ã©tÃ© validÃ©e aprÃ¨s merge sur main.n
