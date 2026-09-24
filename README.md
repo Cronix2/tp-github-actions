@@ -29,9 +29,18 @@ Réponse :
 
 ```json
 {
-  "status": "ok"
+  "status": "ok",
+  "redis": "ok"
 }
 ```
+
+Si Redis est indisponible, l'endpoint renvoie HTTP 503 avec :
+
+{
+  "status": "error",
+  "redis": "unavailable"
+}
+
 
 ### Statut
 
