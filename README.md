@@ -257,3 +257,119 @@ status = ok
 redis = ok
 
 La chaÃ®ne CI/CD complÃ¨te a enfin Ã©tÃ© validÃ©e aprÃ¨s merge sur main.n
+
+---
+
+## Observabilite — Prometheus & Grafana
+
+Le projet integre une stack d'observabilite permettant de superviser l'application Flask en temps reel.
+
+### Demarrage de la stack
+
+L'ensemble des services peut etre lance avec une seule commande :
+
+```bash
+docker compose up -d --buildVerification :
+
+docker compose ps
+Acces aux interfaces
+Application : http://localhost:8080
+Prometheus : http://localhost:9090
+Grafana : http://localhost:3000
+Prometheus
+
+Prometheus collecte automatiquement les metriques exposees par les deux instances applicatives :
+
+web-blue:5000
+web-green:5000
+
+L'endpoint de metriques est :
+
+/metrics
+
+Les principales metriques applicatives sont :
+
+http_requests_total : compteur total des requetes HTTP, avec labels method, endpoint et status ;
+http_request_duration_seconds : histogramme du temps de traitement des requetes HTTP.
+
+La configuration Prometheus se trouve dans :
+
+monitoring/prometheus/prometheus.yml
+
+Les regles d'alerte sont definies dans :
+
+monitoring/prometheus/alerts.yml
+Grafana
+
+Grafana utilise Prometheus comme datasource par defaut.
+
+La datasource est provisionnee automatiquement au demarrage depuis :
+
+monitoring/grafana/provisioning/datasources/prometheus.yml
+
+Le dashboard est egalement provisionne automatiquement.
+
+Dashboard :
+
+TP5 - Application Monitoring
+
+UID :
+
+tp5-monitoring
+
+Fichier JSON :
+
+monitoring/grafana/dashboards/tp5-monitoring.json
+
+Le dashboard contient notamment :
+
+debit de requetes HTTP par endpoint ;
+repartition des codes HTTP ;
+latence HTTP p95 ;
+nombre de targets Prometheus disponibles.
+Requetes PromQL principales
+
+Debit de requetes par endpoint :
+
+sum by (endpoint) (rate(http_requests_total[1m]))
+
+Taux d'erreur HTTP :
+
+sum(rate(http_requests_total{status=~"5.."}[1m]))
+/
+sum(rate(http_requests_total[1m]))
+
+Latence p95 :
+
+histogram_quantile(
+  0.95,
+  sum by (le, endpoint) (
+    rate(http_request_duration_seconds_bucket[5m])
+  )
+)
+Alerte Prometheus
+
+Une alerte nommee :
+
+HighHTTPErrorRate
+
+se declenche lorsque le taux de reponses HTTP 5xx depasse :
+
+5 %
+
+pendant au moins :
+
+30 secondes
+
+Cette temporisation permet d'eviter le declenchement d'une alerte sur un simple pic ponctuel.
+
+La regle a ete validee en provoquant volontairement des erreurs via :
+
+/simulate-error
+
+et en observant les etats successifs :
+
+inactive -> pending -> firing
+Arret de la stack
+docker compose down
+
