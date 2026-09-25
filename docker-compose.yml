@@ -63,6 +63,20 @@ services:
     networks:
       - app-network
 
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    depends_on:
+      web-blue:
+        condition: service_healthy
+      web-green:
+        condition: service_healthy
+    networks:
+      - app-network
   redis:
     image: redis:7-alpine
     volumes:
