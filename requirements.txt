@@ -5,3 +5,4 @@ pytest-cov==5.0.0
 flake8==7.0.0
 fakeredis==2.23.2
 gunicorn==23.0.0
+prometheus-client==0.21.1
