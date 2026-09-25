@@ -1,8 +1,14 @@
 import os
+import time
 
 import redis
-from flask import Flask, Response, jsonify, request
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
+from flask import Flask, Response, g, jsonify, request
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    Counter,
+    Histogram,
+    generate_latest,
+)
 
 app = Flask(__name__)
 
@@ -12,6 +18,12 @@ HTTP_REQUESTS_TOTAL = Counter(
     "http_requests_total",
     "Nombre total de requetes HTTP recues",
     ["method", "endpoint", "status"],
+)
+
+HTTP_REQUEST_DURATION_SECONDS = Histogram(
+    "http_request_duration_seconds",
+    "Temps de traitement des requetes HTTP en secondes",
+    ["method", "endpoint"],
 )
 
 
@@ -33,6 +45,12 @@ def sanitize_input(value):
     return value.replace("<", "&lt;").replace(">", "&gt;")
 
 
+@app.before_request
+def start_request_timer():
+    if request.path != "/metrics":
+        g.request_start_time = time.perf_counter()
+
+
 @app.after_request
 def record_request_metrics(response):
     if request.path != "/metrics":
@@ -41,6 +59,16 @@ def record_request_metrics(response):
             endpoint=request.path,
             status=str(response.status_code),
         ).inc()
+
+        start_time = getattr(g, "request_start_time", None)
+
+        if start_time is not None:
+            duration = time.perf_counter() - start_time
+
+            HTTP_REQUEST_DURATION_SECONDS.labels(
+                method=request.method,
+                endpoint=request.path,
+            ).observe(duration)
 
     return response
 
@@ -75,6 +103,14 @@ def visits():
     client = get_redis_client()
     count = client.incr("visits")
     return jsonify(visits=count), 200
+
+
+@app.route("/simulate-error")
+def simulate_error():
+    return jsonify(
+        status="error",
+        message="Simulated application error",
+    ), 500
 
 
 if __name__ == "__main__":

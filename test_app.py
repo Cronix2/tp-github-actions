@@ -84,3 +84,66 @@ def test_metrics_endpoint_does_not_count_itself():
 
     assert first_lines == second_lines
     assert 'endpoint="/metrics"' not in second_metrics
+
+
+def test_request_duration_histogram_is_exposed():
+    client = app.test_client()
+
+    client.get("/status")
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+
+    metrics = response.get_data(as_text=True)
+
+    assert "http_request_duration_seconds_bucket" in metrics
+    assert "http_request_duration_seconds_count" in metrics
+    assert "http_request_duration_seconds_sum" in metrics
+    assert 'endpoint="/status"' in metrics
+
+
+def test_simulate_error_returns_500_and_is_counted():
+    client = app.test_client()
+
+    response = client.get("/simulate-error")
+
+    assert response.status_code == 500
+    assert response.get_json() == {
+        "message": "Simulated application error",
+        "status": "error",
+    }
+
+    metrics_response = client.get("/metrics")
+    metrics = metrics_response.get_data(as_text=True)
+
+    assert (
+        'http_requests_total{'
+        'endpoint="/simulate-error",method="GET",status="500"}'
+        in metrics
+    )
+
+    assert (
+        'http_request_duration_seconds_count{'
+        'endpoint="/simulate-error",method="GET"}'
+        in metrics
+    )
+
+
+def test_metrics_endpoint_is_excluded_from_duration_histogram():
+    client = app.test_client()
+
+    client.get("/metrics")
+    client.get("/metrics")
+
+    metrics = client.get("/metrics").get_data(as_text=True)
+
+    duration_lines = [
+        line
+        for line in metrics.splitlines()
+        if line.startswith("http_request_duration_seconds")
+    ]
+
+    assert not any(
+        'endpoint="/metrics"' in line
+        for line in duration_lines
+    )
