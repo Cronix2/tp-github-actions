@@ -43,3 +43,44 @@ def test_health_endpoint_when_redis_unavailable(monkeypatch):
         "status": "error",
         "redis": "unavailable",
     }
+
+
+def test_metrics_endpoint_exposes_http_counter():
+    client = app.test_client()
+
+    client.get("/status")
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+
+    metrics = response.get_data(as_text=True)
+
+    assert "http_requests_total" in metrics
+    assert 'endpoint="/status"' in metrics
+    assert 'method="GET"' in metrics
+    assert 'status="200"' in metrics
+
+
+def test_metrics_endpoint_does_not_count_itself():
+    client = app.test_client()
+
+    first_response = client.get("/metrics")
+    first_metrics = first_response.get_data(as_text=True)
+
+    second_response = client.get("/metrics")
+    second_metrics = second_response.get_data(as_text=True)
+
+    first_lines = sorted(
+        line
+        for line in first_metrics.splitlines()
+        if line.startswith("http_requests_total")
+    )
+
+    second_lines = sorted(
+        line
+        for line in second_metrics.splitlines()
+        if line.startswith("http_requests_total")
+    )
+
+    assert first_lines == second_lines
+    assert 'endpoint="/metrics"' not in second_metrics
