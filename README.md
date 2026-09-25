@@ -1,4 +1,4 @@
-﻿# TP DevOps - CI/CD et dÃ©ploiement Blue/Green
+# TP DevOps - CI/CD et dÃ©ploiement Blue/Green
 
 [![CI](https://github.com/Cronix2/tp-github-actions/actions/workflows/ci.yml/badge.svg)](https://github.com/Cronix2/tp-github-actions/actions/workflows/ci.yml)
 
@@ -269,7 +269,12 @@ Le projet integre une stack d'observabilite permettant de superviser l'applicati
 L'ensemble des services peut etre lance avec une seule commande :
 
 ```bash
-docker compose up -d --buildVerification :
+docker compose up -d --build
+```
+
+Verification :
+
+```bash
 
 docker compose ps
 Acces aux interfaces
